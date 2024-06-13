@@ -1,1 +1,2 @@
 # memory-gelato
+Memory-GELATO (Memory <ins>G</ins>PU <ins>E</ins>stimation of <ins>L</ins>LM <ins>A</ins>llocation for <ins>T</ins>raining <ins>O</ins>ptimization) is a simple tool for LLM peak training memory estimation and memory constrained hyperparameter search.
