@@ -64,12 +64,48 @@ def simple_peak_memory_estimation(
         batch_size *
         model_arch.hidden_size *
         model_arch.n_layers *
-        4
+        2
     )
     other_act = 8 * max_seq_len * batch_size * model_arch.hidden_size
     cross_entropy_act = 8 * max_seq_len * batch_size * model_arch.vocab_size
-    logits = 10 * max_seq_len * batch_size * model_arch.vocab_size
-    hidden_states = max_seq_len * batch_size * model_arch.hidden_size * model_arch.n_layers * 2
+    logits = 4 * max_seq_len * batch_size * model_arch.vocab_size
+    attention_mask = max_seq_len ** 2 * model_arch.n_layers
+    data = max_seq_len * batch_size * 32
+    casted_lm_head = model_arch.vocab_size * model_arch.hidden_size * 2
+
+    single_block_activations = (
+        # Attention block
+        2 * max_seq_len * batch_size * model_arch.hidden_size +
+        4 * model_arch.n_heads * max_seq_len**2 * batch_size +
+        model_arch.n_heads * max_seq_len**2 * batch_size +
+        2 * model_arch.n_heads + max_seq_len**2 * batch_size +
+        2 * max_seq_len * batch_size * model_arch.hidden_size +
+        # MLP block
+        2 * max_seq_len * batch_size * model_arch.hidden_size +
+        4 * max_seq_len * batch_size * model_arch.ff_intermediate +
+        16 * max_seq_len * batch_size * model_arch.ff_intermediate +
+        max_seq_len * batch_size * model_arch.hidden_size +
+        # Norms
+        8 * max_seq_len * batch_size * model_arch.hidden_size +
+        # Residuals addition
+        4 * max_seq_len * batch_size * model_arch.hidden_size
+    )
+
+    block_intermediate = (
+        6 * max_seq_len * batch_size * model_arch.hidden_size +
+        16 * model_arch.ff_intermediate * max_seq_len * batch_size
+    )
+
+    matmul_reconstruction = 4 * model_arch.ff_intermediate * model_arch.hidden_size
+
+    first_peak = 4 * logits + casted_lm_head
+    second_peak = (
+        block_intermediate +
+        single_block_activations +
+        matmul_reconstruction +
+        logits
+    )
+    third_peak = logits + 2 * casted_lm_head
 
     activation_memory = (
         decoder_block_act +
@@ -82,10 +118,10 @@ def simple_peak_memory_estimation(
         optimizer_memory +
         gradient_memory +
         activation_memory +
-        logits +
         cublas_workspace +
-        hidden_states
+        max(first_peak, second_peak, third_peak) +
+        attention_mask +
+        data
     )
 
     return total_memory
-
