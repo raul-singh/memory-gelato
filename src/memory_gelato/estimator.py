@@ -75,37 +75,39 @@ def simple_peak_memory_estimation(
 
     single_block_activations = (
         # Attention block
-        2 * max_seq_len * batch_size * model_arch.hidden_size +
+        2 * max_seq_len * batch_size * model_arch.n_heads * model_arch.head_size +
+        2 * max_seq_len * batch_size * model_arch.n_kv_heads * model_arch.head_size +
         4 * model_arch.n_heads * max_seq_len**2 * batch_size +
         model_arch.n_heads * max_seq_len**2 * batch_size +
         2 * model_arch.n_heads + max_seq_len**2 * batch_size +
-        2 * max_seq_len * batch_size * model_arch.hidden_size +
+        2 * max_seq_len * batch_size * model_arch.n_kv_heads * model_arch.head_size +
+        4 * max_seq_len * batch_size * model_arch.hidden_size +
         # MLP block
         2 * max_seq_len * batch_size * model_arch.hidden_size +
         4 * max_seq_len * batch_size * model_arch.ff_intermediate +
-        16 * max_seq_len * batch_size * model_arch.ff_intermediate +
+        14 * max_seq_len * batch_size * model_arch.ff_intermediate +
         max_seq_len * batch_size * model_arch.hidden_size +
         # Norms
-        8 * max_seq_len * batch_size * model_arch.hidden_size +
-        # Residuals addition
-        4 * max_seq_len * batch_size * model_arch.hidden_size
+        8 * max_seq_len * batch_size * model_arch.hidden_size
     )
 
     block_intermediate = (
+        # Residuals
         6 * max_seq_len * batch_size * model_arch.hidden_size +
+        # MLP intermediate
         16 * model_arch.ff_intermediate * max_seq_len * batch_size
     )
 
     matmul_reconstruction = 4 * model_arch.ff_intermediate * model_arch.hidden_size
 
     first_peak = 4 * logits + casted_lm_head
-    second_peak = (
+    second_peak = logits + 2 * casted_lm_head
+    third_peak = (
         block_intermediate +
         single_block_activations +
         matmul_reconstruction +
         logits
     )
-    third_peak = logits + 2 * casted_lm_head
 
     activation_memory = (
         decoder_block_act +
