@@ -5,9 +5,36 @@ from memory_gelato.utils import memory_unit
 
 @dataclass
 class MemoryArgs:
+    """
+    Configuration arguments for memory-efficient fine-tuning of language models.
+
+    Attributes:
+        model_id (str):
+            The Hugging Face model id.
+        batch_size (int):
+            The batch size for training.
+        max_sequence_length (int):
+            The maximum sequence length for input texts.
+        optimizer (Optional[str]):
+            The optimizer to use, default is "PagedAdamW8bit".
+        adapter_type (Optional[str]):
+            The type of adapter to use, if any.
+        adapter_rank (Optional[int]):
+            The rank of the adapter, if applicable.
+        adapter_target_layers (str):
+            The layers to apply the adapter to, default is "all-linear".
+        bnb_quantization_bit (Optional[int]):
+            The number of bits for quantization using bitsandbytes, if any.
+        double_quantization (bool):
+            Whether to use double quantization, default is True.
+        quant_block_size (int):
+            The block size for quantization, default is 64.
+        double_quant_block_size (int):
+            The block size for double quantization, default is 256.
+    """
     model_id: str
 
-    batch_size: str
+    batch_size: int
     max_sequence_length: int
 
     optimizer: Optional[str] = "PagedAdamW8bit"
