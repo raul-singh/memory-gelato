@@ -1,12 +1,12 @@
 # memory-gelato
-Memory-GELATO (Memory <ins>G</ins>PU <ins>E</ins>stimation of <ins>L</ins>LM <ins>A</ins>llocation for <ins>T</ins>raining <ins>O</ins>ptimization) is a simple tool for LLM peak training memory estimation and memory constrained hyperparameter search.
+:icecream: Memory-GELATO (Memory <ins>G</ins>PU <ins>E</ins>stimation of <ins>L</ins>LM <ins>A</ins>llocation for <ins>T</ins>raining <ins>O</ins>ptimization) is a simple tool for LLM peak training memory estimation and memory constrained hyperparameter search.
 
 ## Basic Usage
 
-First, you have to define the hyperparameters you are going to use that will impact memory, like batch size, sequence length and model. You can use the `MemoryArgs` dataclass for this.
+First, the hyperparameters you are going to use that will impact memory must be defined, like batch size, sequence length and model. You can use the `MemoryArgs` dataclass for this.
 
 ```python
-from memory_gelato import MemoryArgs
+from memory_gelato import MemoryArgs, simple_peak_estimation
 
 # Here you can set your memory sensitive hyperparameters
 memory_args = MemoryArgs(
@@ -19,7 +19,7 @@ memory_args = MemoryArgs(
 )
 ```
 
-After this, if you want to get an estimation of the peak memory footprint, you can just run the method `simple_peak_estimation` passing the `MemoryArgs` you just defined.
+After this, to get an estimation of the peak memory footprint, run the method `simple_peak_estimation` passing the `MemoryArgs` defined before.
 
 ```python
 memory_estimation = simple_peak_estimation(memory_args)
