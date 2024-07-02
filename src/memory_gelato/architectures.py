@@ -3,6 +3,10 @@ from typing import Dict, Union
 from .utils import num_elements
 from transformers import AutoConfig, GemmaConfig
 
+QUADARTIC_ATTENTION_MODELS = [
+    "Phi-3-mini",
+]
+
 @dataclass
 class StandardLLMArchitecture:
 
@@ -27,6 +31,8 @@ class StandardLLMArchitecture:
         self.norm = self.hidden_size
         self.wte = (self.vocab_size, self.hidden_size)
         self.lm_head = (self.hidden_size, self.vocab_size)
+
+        self.max_position_embeddings = model_config.max_position_embeddings
 
     def total_parameters(self) -> Dict[str, int]:
 

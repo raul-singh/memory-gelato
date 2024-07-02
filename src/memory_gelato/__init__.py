@@ -1,1 +1,1 @@
-from .estimator import simple_peak_memory_estimation
+from .estimator import simple_peak_estimation, MemoryArgs

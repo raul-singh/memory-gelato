@@ -1,35 +1,68 @@
 from typing import Optional
-from transformers import AutoConfig
-from .architectures import model_architecture
+from dataclasses import dataclass
+from memory_gelato.architectures import model_architecture, QUADARTIC_ATTENTION_MODELS
+from memory_gelato.utils import memory_unit
 
-def simple_peak_memory_estimation(
-    model_id: str,
-    batch_size: int,
-    max_seq_len: int,
-    adapter_type: Optional[str] = None,
-    adapter_rank: Optional[int] = None,
-    adapter_target_layers: str = "all-linear",
-    optimizer: Optional[str] = "PagedAdamW8bit",
+@dataclass
+class MemoryArgs:
+    model_id: str
+
+    batch_size: str
+    max_sequence_length: int
+
+    optimizer: Optional[str] = "PagedAdamW8bit"
+
+    adapter_type: Optional[str] = None
+    adapter_rank: Optional[int] = None
+    adapter_target_layers: str = "all-linear"
+
     bnb_quantization_bit: Optional[int] = None
+    double_quantization: bool = True
+
+    quant_block_size: int = 64
+    double_quant_block_size: int = 256
+
+
+def compute_memory(
+    training_params: MemoryArgs
     ) -> int:
 
     if (
-        bnb_quantization_bit is not None and
-        bnb_quantization_bit != 4 and
-        bnb_quantization_bit != 8
+        training_params.bnb_quantization_bit is not None and
+        training_params.bnb_quantization_bit != 4 and
+        training_params.bnb_quantization_bit != 8
     ):
         raise RuntimeError(
-            f"{bnb_quantization_bit}-bit quantization is not supported."
+            f"{training_params.bnb_quantization_bit}-bit quantization is not supported."
             )
 
-    model_arch = model_architecture(model_id)
+    model_arch = model_architecture(training_params.model_id)
     model_parameters = model_arch.total_parameters()
 
-    if bnb_quantization_bit is not None:
+    batch_size = training_params.batch_size
+    seq_length = training_params.max_sequence_length
+    vocab_size = model_arch.vocab_size
+    hidden_size = model_arch.hidden_size
+    hidden_mlp = model_arch.ff_intermediate
+    n_layers = model_arch.n_layers
+
+    if training_params.bnb_quantization_bit is not None:
         model_parameter_memory = (
-            model_parameters["linear_layers"] * (bnb_quantization_bit/8) +
+            model_parameters["linear_layers"] * (training_params.bnb_quantization_bit/8) +
             model_parameters["others"] * 4 # Norms are upscaled to FP32
         )
+        if training_params.double_quantization:
+            model_parameter_memory += (
+                model_parameters["linear_layers"]/training_params.quant_block_size +
+                4 * model_parameters["linear_layers"]/(
+                    training_params.quant_block_size *
+                    training_params.double_quant_block_size
+                    )
+            )
+        else:
+            model_parameter_memory += (
+                4 * model_parameters["linear_layers"]/training_params.quant_block_size
+            )
 
     else:
         model_parameter_memory = (
@@ -37,11 +70,11 @@ def simple_peak_memory_estimation(
             model_parameters["others"] * 2
         )
 
-    if adapter_type is not None:
+    if training_params.adapter_type is not None:
         n_adapter_parameters = model_arch.adapter_parameters(
-            adapter_rank,
-            adapter_target_layers,
-            adapter_type
+            training_params.adapter_rank,
+            training_params.adapter_target_layers,
+            training_params.adapter_type
             )
         # Assuming adapter in 16-bit
         model_parameter_memory += (n_adapter_parameters * 2)
@@ -53,6 +86,13 @@ def simple_peak_memory_estimation(
             model_parameters["others"]
         )
 
+    # Check if model has quadratic attention enabled by default
+    is_quadratic_attention = False
+    for model_family in QUADARTIC_ATTENTION_MODELS:
+        if model_family in training_params.model_id:
+            is_quadratic_attention = True
+            break
+
     # TODO implement different optimizers memory footprint
     optimizer_memory = n_trainable_parameters * 6
     gradient_memory = n_trainable_parameters * 4
@@ -60,70 +100,77 @@ def simple_peak_memory_estimation(
 
     # These formulae are assuming gradient checkpointing is used
     decoder_block_act = (
-        max_seq_len *
-        batch_size *
-        model_arch.hidden_size *
-        model_arch.n_layers *
-        2
+        seq_length * batch_size * hidden_size * n_layers * 4
     )
-    other_act = 8 * max_seq_len * batch_size * model_arch.hidden_size
-    cross_entropy_act = 8 * max_seq_len * batch_size * model_arch.vocab_size
-    logits = 4 * max_seq_len * batch_size * model_arch.vocab_size
-    attention_mask = max_seq_len ** 2 * model_arch.n_layers
-    data = max_seq_len * batch_size * 32
-    casted_lm_head = model_arch.vocab_size * model_arch.hidden_size * 2
+    other_act = 8 * seq_length * batch_size * hidden_size
+    cross_entropy_act = 8 * seq_length * batch_size * vocab_size
+    logits = 4 * seq_length * batch_size * vocab_size
+    attention_mask = seq_length ** 2
+    data = seq_length * batch_size * 32
+    casted_lm_head = vocab_size * hidden_size * 2
 
-    single_block_activations = (
-        # Attention block
-        2 * max_seq_len * batch_size * model_arch.n_heads * model_arch.head_size +
-        2 * max_seq_len * batch_size * model_arch.n_kv_heads * model_arch.head_size +
-        4 * model_arch.n_heads * max_seq_len**2 * batch_size +
-        model_arch.n_heads * max_seq_len**2 * batch_size +
-        2 * model_arch.n_heads + max_seq_len**2 * batch_size +
-        2 * max_seq_len * batch_size * model_arch.n_kv_heads * model_arch.head_size +
-        4 * max_seq_len * batch_size * model_arch.hidden_size +
-        # MLP block
-        2 * max_seq_len * batch_size * model_arch.hidden_size +
-        4 * max_seq_len * batch_size * model_arch.ff_intermediate +
-        14 * max_seq_len * batch_size * model_arch.ff_intermediate +
-        max_seq_len * batch_size * model_arch.hidden_size +
-        # Norms
-        8 * max_seq_len * batch_size * model_arch.hidden_size
-    )
-
-    block_intermediate = (
+    recomputed_activations = (
+        # Memory-efficiend SDPA
+        42 * seq_length * batch_size * hidden_size +
+        # MLP
+        18 * seq_length * batch_size * hidden_mlp +
         # Residuals
-        6 * max_seq_len * batch_size * model_arch.hidden_size +
-        # MLP intermediate
-        16 * model_arch.ff_intermediate * max_seq_len * batch_size
+        8 * seq_length * batch_size * hidden_size +
+        # Norms
+        8 * seq_length * batch_size * hidden_size
     )
 
-    matmul_reconstruction = 4 * model_arch.ff_intermediate * model_arch.hidden_size
+    matmul_reconstruction = 4 * hidden_mlp * hidden_size
 
-    first_peak = 4 * logits + casted_lm_head
-    second_peak = logits + 2 * casted_lm_head
+    first_peak = 2 * logits + casted_lm_head + cross_entropy_act
+    second_peak = logits + 2 * casted_lm_head + logits
     third_peak = (
-        block_intermediate +
-        single_block_activations +
+        recomputed_activations +
         matmul_reconstruction +
         logits
     )
+    fourth_peak = (
+        4 * 4 * seq_length**2 * batch_size * model_arch.n_heads +
+        # Residuals
+        1 * 4 * seq_length * batch_size * hidden_mlp +
+        # Norms
+        2 * 4 * seq_length * batch_size * hidden_size
+        + logits
+        ) if is_quadratic_attention else 0
 
     activation_memory = (
         decoder_block_act +
-        other_act +
-        cross_entropy_act
+        other_act
     )
 
-    total_memory = (
+    baseline_memory = (
         model_parameter_memory +
         optimizer_memory +
         gradient_memory +
         activation_memory +
         cublas_workspace +
-        max(first_peak, second_peak, third_peak) +
         attention_mask +
-        data
+        data +
+        logits
     )
 
-    return total_memory
+    peak_memory = max(first_peak, second_peak, third_peak, fourth_peak)
+
+    return (
+        baseline_memory,
+        peak_memory,
+        model_parameter_memory,
+        optimizer_memory,
+        gradient_memory,
+        activation_memory
+        )
+
+
+def simple_peak_estimation(
+    training_params: MemoryArgs,
+    unit: str = None,
+    ) -> int:
+    memory = compute_memory(training_params)
+    memory = memory[0] + memory[1]
+    scale = memory_unit(unit)
+    return memory/scale
