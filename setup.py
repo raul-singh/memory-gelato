@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 
 setup(
-    name='memory-gelato',
+    name='memory_gelato',
     version='0.0.1',
     description='LLM fine-tuning peak memory estimation',
     long_description=open('README.md').read(),
